@@ -23,8 +23,7 @@ def get_walls():
 
 
 def move(direction):
-    r = requests.post(f"{BASE}/mouse/{MOUSE}/move", json={"direction": direction})
-    return r.json()
+    return requests.post(f"{BASE}/mouse/{MOUSE}/move", json={"direction": direction}).json()
 
 
 def solve():
