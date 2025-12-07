@@ -1,288 +1,253 @@
 #!/usr/bin/env python3
-"""A* maze solver with blind navigation.
-
-Since the API doesn't return position (blind navigation), this solver:
-1. Tracks its own position and facing direction
-2. Builds an internal map of discovered walls
-3. Uses A* to find paths to the goal
-
-The goal is the center 2x2 cells of a 32x32 maze: (15,15), (15,16), (16,15), (16,16)
-"""
+"""Simple A* maze solver with blind navigation."""
 
 import heapq
 import requests
-from rich.console import Console
-from rich.live import Live
-from rich.table import Table
 
 BASE = "http://127.0.0.1:8000"
 MOUSE = "astar"
-MAZE_SIZE = 32
-console = Console()
+SIZE = 32
+GOAL = {(15, 15), (15, 16), (16, 15), (16, 16)}
 
-# Goal cells (center 2x2 of 32x32 maze)
-GOAL_CELLS = {(15, 15), (15, 16), (16, 15), (16, 16)}
-
-# Cardinal direction helpers for internal tracking
-CARDINAL = ["north", "east", "south", "west"]
+DIRS = ["north", "east", "south", "west"]
 DELTA = {"north": (0, 1), "south": (0, -1), "east": (1, 0), "west": (-1, 0)}
 OPPOSITE = {"north": "south", "south": "north", "east": "west", "west": "east"}
-TURN_LEFT = {"north": "west", "west": "south", "south": "east", "east": "north"}
-TURN_RIGHT = {"north": "east", "east": "south", "south": "west", "west": "north"}
-TURN_BACK = {"north": "south", "south": "north", "east": "west", "west": "east"}
-
-# Relative to cardinal conversion
-REL_TO_CARD = {
+TURN = {
     "forward": lambda f: f,
-    "back": lambda f: TURN_BACK[f],
-    "left": lambda f: TURN_LEFT[f],
-    "right": lambda f: TURN_RIGHT[f],
+    "back": lambda f: OPPOSITE[f],
+    "left": lambda f: DIRS[(DIRS.index(f) - 1) % 4],
+    "right": lambda f: DIRS[(DIRS.index(f) + 1) % 4],
 }
 
 
 class MazeMap:
-    """Internal map of discovered maze walls."""
+    """Discovered maze walls. Decoupled from navigation."""
 
-    def __init__(self):
-        # walls[pos][direction] = True/False/None (None = unknown)
-        self.walls = {}
-
-    def get_wall(self, x, y, direction):
-        """Get wall state: True (wall), False (open), None (unknown)."""
-        return self.walls.get((x, y), {}).get(direction)
+    def __init__(self, size=SIZE):
+        self.size = size
+        self.walls = {}  # {(x,y): {dir: bool}}
 
     def set_walls(self, x, y, facing, rel_walls):
-        """Update walls at position from relative wall data."""
+        """Record walls at position from relative wall readings."""
         if (x, y) not in self.walls:
             self.walls[(x, y)] = {}
-
-        for rel_dir, has_wall in rel_walls.items():
-            card_dir = REL_TO_CARD[rel_dir](facing)
-            self.walls[(x, y)][card_dir] = has_wall
-
-            # Also set the opposite wall in the adjacent cell
-            dx, dy = DELTA[card_dir]
+        for rel, blocked in rel_walls.items():
+            card = TURN[rel](facing)
+            self.walls[(x, y)][card] = blocked
+            # Mirror to adjacent cell
+            dx, dy = DELTA[card]
             nx, ny = x + dx, y + dy
             if (nx, ny) not in self.walls:
                 self.walls[(nx, ny)] = {}
-            self.walls[(nx, ny)][OPPOSITE[card_dir]] = has_wall
+            self.walls[(nx, ny)][OPPOSITE[card]] = blocked
 
-    def get_neighbors(self, x, y):
-        """Get accessible neighbors (no wall blocking, or unknown)."""
-        neighbors = []
-        for direction in CARDINAL:
-            wall = self.get_wall(x, y, direction)
-            if wall is False:  # Confirmed open
-                dx, dy = DELTA[direction]
-                neighbors.append((x + dx, y + dy, direction))
-        return neighbors
+    def is_open(self, x, y, direction):
+        """True if passage is confirmed open."""
+        return self.walls.get((x, y), {}).get(direction) is False
 
-    def get_possible_neighbors(self, x, y):
-        """Get neighbors that might be accessible (open or unknown)."""
-        neighbors = []
-        for direction in CARDINAL:
-            wall = self.get_wall(x, y, direction)
-            if wall is not True:  # Open or unknown
-                dx, dy = DELTA[direction]
-                nx, ny = x + dx, y + dy
-                if 0 <= nx < MAZE_SIZE and 0 <= ny < MAZE_SIZE:
-                    neighbors.append((x + dx, y + dy, direction))
-        return neighbors
+    def neighbors(self, x, y):
+        """Return confirmed open neighbors as (nx, ny, direction)."""
+        for d in DIRS:
+            if self.is_open(x, y, d):
+                dx, dy = DELTA[d]
+                yield (x + dx, y + dy, d)
+
+    def render(self, path=None):
+        """Render maze map using box-drawing characters."""
+        path_set = set(path) if path else set()
+        if not self.walls:
+            return "No maze discovered"
+        xs = [p[0] for p in self.walls]
+        ys = [p[1] for p in self.walls]
+        x0, x1 = min(xs), max(xs)
+        y0, y1 = min(ys), max(ys)
+
+        def wall(x, y, d):
+            return self.walls.get((x, y), {}).get(d) is True
+
+        def junction(x, y):
+            """Get box char for junction at top-left corner of cell (x,y)."""
+            up = wall(x, y, "west") or wall(x - 1, y, "east")
+            down = wall(x, y - 1, "west") or wall(x - 1, y - 1, "east")
+            left = wall(x - 1, y, "north") or wall(x - 1, y - 1, "south")
+            right = wall(x, y, "north") or wall(x, y - 1, "south")
+            key = (up, right, down, left)
+            return {
+                (1,1,1,1): "┼", (1,1,1,0): "├", (1,1,0,1): "┴", (1,0,1,1): "┤",
+                (0,1,1,1): "┬", (1,1,0,0): "└", (1,0,0,1): "┘", (0,0,1,1): "┐",
+                (0,1,1,0): "┌", (1,0,1,0): "│", (0,1,0,1): "─", (1,0,0,0): "╵",
+                (0,1,0,0): "╶", (0,0,1,0): "╷", (0,0,0,1): "╴", (0,0,0,0): " ",
+            }.get(key, " ")
+
+        lines = []
+        for y in range(y1, y0 - 1, -1):
+            top = ""
+            mid = ""
+            for x in range(x0, x1 + 1):
+                top += junction(x, y + 1)
+                top += "───" if wall(x, y, "north") else "   "
+                mid += "│" if wall(x, y, "west") else " "
+                if (x, y) in GOAL:
+                    mid += " G "
+                elif (x, y) in path_set:
+                    mid += " ◆ "
+                else:
+                    mid += "   "
+            top += junction(x1 + 1, y + 1)
+            mid += "│" if wall(x1, y, "east") else " "
+            lines.append(top)
+            lines.append(mid)
+        bot = ""
+        for x in range(x0, x1 + 1):
+            bot += junction(x, y0)
+            bot += "───" if wall(x, y0, "south") else "   "
+        bot += junction(x1 + 1, y0)
+        lines.append(bot)
+        return "\n".join(lines)
 
 
-class AStarSolver:
-    """A* solver with internal position tracking."""
+def heuristic(x, y):
+    """Manhattan distance to nearest goal."""
+    return min(abs(x - gx) + abs(y - gy) for gx, gy in GOAL)
+
+
+def astar(maze, start, goals):
+    """A* pathfinding. Returns list of (x, y, direction) or None."""
+    sx, sy = start
+    heap = [(heuristic(sx, sy), 0, sx, sy, [])]
+    seen = set()
+
+    while heap:
+        _, cost, x, y, path = heapq.heappop(heap)
+        if (x, y) in seen:
+            continue
+        seen.add((x, y))
+        if (x, y) in goals:
+            return path
+        for nx, ny, d in maze.neighbors(x, y):
+            if (nx, ny) not in seen:
+                new_path = path + [(nx, ny, d)]
+                heapq.heappush(heap, (cost + 1 + heuristic(nx, ny), cost + 1, nx, ny, new_path))
+    return None
+
+
+def find_unexplored(maze, start):
+    """BFS to nearest cell with unknown walls."""
+    sx, sy = start
+    heap = [(0, sx, sy, [])]
+    seen = set()
+
+    while heap:
+        cost, x, y, path = heapq.heappop(heap)
+        if (x, y) in seen:
+            continue
+        seen.add((x, y))
+        # Has unknown walls?
+        cell = maze.walls.get((x, y), {})
+        if len(cell) < 4:
+            return path
+        for nx, ny, d in maze.neighbors(x, y):
+            if (nx, ny) not in seen:
+                heapq.heappush(heap, (cost + 1, nx, ny, path + [(nx, ny, d)]))
+    return None
+
+
+class Solver:
+    """A* solver with position tracking."""
 
     def __init__(self):
-        self.x = 0
-        self.y = 0
+        self.x, self.y = 0, 0
         self.facing = "north"
         self.maze = MazeMap()
         self.steps = 0
-        self.path_history = [(0, 0)]
+        self.path = [(0, 0)]
 
-    def get_walls(self):
+    def api_walls(self):
         return requests.get(f"{BASE}/mouse/{MOUSE}/surroundings").json()
 
-    def move(self, direction):
+    def api_move(self, direction):
         return requests.post(f"{BASE}/mouse/{MOUSE}/move", json={"direction": direction}).json()
 
-    def reset(self):
+    def api_reset(self):
         requests.post(f"{BASE}/mouse/{MOUSE}/reset")
-        self.x = 0
-        self.y = 0
-        self.facing = "north"
-        self.path_history = [(0, 0)]
 
-    def sense_and_update(self):
-        """Sense walls and update internal map."""
-        walls = self.get_walls()
+    def sense(self):
+        """Read walls and update map."""
+        walls = self.api_walls()
         self.maze.set_walls(self.x, self.y, self.facing, walls)
         return walls
 
-    def move_direction(self, rel_dir):
-        """Move in a relative direction and update internal state."""
-        result = self.move(rel_dir)
+    def rel_dir(self, target_cardinal):
+        """Get relative direction to face a cardinal direction."""
+        if self.facing == target_cardinal:
+            return "forward"
+        if TURN["left"](self.facing) == target_cardinal:
+            return "left"
+        if TURN["right"](self.facing) == target_cardinal:
+            return "right"
+        return "back"
+
+    def move(self, rel):
+        """Move and update state."""
+        result = self.api_move(rel)
         if result["success"]:
-            # Update facing
-            self.facing = REL_TO_CARD[rel_dir](self.facing)
-            # Update position
+            self.facing = TURN[rel](self.facing)
             dx, dy = DELTA[self.facing]
             self.x += dx
             self.y += dy
-            self.path_history.append((self.x, self.y))
+            self.path.append((self.x, self.y))
             self.steps += 1
         return result
 
-    def turn_to_face(self, target_cardinal):
-        """Return the relative direction to face a cardinal direction."""
-        if self.facing == target_cardinal:
-            return "forward"
-        elif TURN_LEFT[self.facing] == target_cardinal:
-            return "left"
-        elif TURN_RIGHT[self.facing] == target_cardinal:
-            return "right"
-        else:
-            return "back"
-
-    def heuristic(self, x, y):
-        """Manhattan distance to nearest goal cell."""
-        return min(abs(x - gx) + abs(y - gy) for gx, gy in GOAL_CELLS)
-
-    def astar_path(self, start, goals):
-        """Find path from start to any goal cell using A*."""
-        sx, sy = start
-        open_set = [(self.heuristic(sx, sy), 0, sx, sy, [])]
-        visited = set()
-
-        while open_set:
-            _, cost, x, y, path = heapq.heappop(open_set)
-
-            if (x, y) in visited:
-                continue
-            visited.add((x, y))
-
-            if (x, y) in goals:
-                return path
-
-            for nx, ny, direction in self.maze.get_neighbors(x, y):
-                if (nx, ny) not in visited:
-                    new_path = path + [(nx, ny, direction)]
-                    new_cost = cost + 1
-                    priority = new_cost + self.heuristic(nx, ny)
-                    heapq.heappush(open_set, (priority, new_cost, nx, ny, new_path))
-
-        return None  # No path found
-
-    def find_nearest_unexplored(self):
-        """Find path to nearest cell with unknown walls."""
-        open_set = [(0, self.x, self.y, [])]
-        visited = set()
-
-        while open_set:
-            cost, x, y, path = heapq.heappop(open_set)
-
-            if (x, y) in visited:
-                continue
-            visited.add((x, y))
-
-            # Check if this cell has unexplored directions
-            for direction in CARDINAL:
-                wall = self.maze.get_wall(x, y, direction)
-                if wall is None:
-                    return path  # Found unexplored area
-
-            for nx, ny, direction in self.maze.get_neighbors(x, y):
-                if (nx, ny) not in visited:
-                    new_path = path + [(nx, ny, direction)]
-                    heapq.heappush(open_set, (cost + 1, nx, ny, new_path))
-
-        return None  # Everything explored
-
-    def follow_path(self, path, live):
-        """Follow a path, returning True if goal reached."""
-        for target_x, target_y, direction in path:
-            # Sense current position
-            self.sense_and_update()
-
-            # Determine relative direction to move
-            rel_dir = self.turn_to_face(direction)
-
-            # Check if we can actually move (wall might block)
-            walls = self.get_walls()
-            if walls[rel_dir]:
-                return False, False  # Path blocked
-
-            result = self.move_direction(rel_dir)
-            self.update_display(live)
-
+    def follow(self, path):
+        """Follow path. Returns (goal_reached, flag)."""
+        for tx, ty, d in path:
+            self.sense()
+            rel = self.rel_dir(d)
+            walls = self.api_walls()
+            if walls[rel]:
+                return False, None
+            result = self.move(rel)
             if result["goal_reached"]:
                 return True, result.get("flag")
-
-        return False, False
-
-    def update_display(self, live):
-        """Update the live display."""
-        table = Table(title=f"A* Solver - Step {self.steps}")
-        table.add_column("Position", style="cyan")
-        table.add_column("Facing", style="green")
-        table.add_column("Explored", style="yellow")
-        table.add_row(
-            f"({self.x}, {self.y})",
-            self.facing,
-            str(len(self.maze.walls))
-        )
-        live.update(table)
+        return False, None
 
     def solve(self):
-        """Main solving loop using A* with exploration."""
-        self.reset()
+        """Main loop."""
+        self.api_reset()
+        print(f"Starting A* solver...")
 
-        with Live(console=console, refresh_per_second=10) as live:
-            while True:
-                # Sense current position
-                self.sense_and_update()
-                self.update_display(live)
+        while True:
+            self.sense()
+            print(f"\r  Step {self.steps}: ({self.x},{self.y}) facing {self.facing}, {len(self.maze.walls)} cells mapped", end="")
 
-                # Try to find path to goal
-                path = self.astar_path((self.x, self.y), GOAL_CELLS)
-
-                if path:
-                    # Found path to goal, follow it
-                    goal_reached, flag = self.follow_path(path, live)
-                    if goal_reached:
-                        live.stop()
-                        console.print(f"[bold green]Goal reached in {self.steps} steps![/bold green]")
-                        console.print(f"[cyan]Explored {len(self.maze.walls)} cells[/cyan]")
-                        if flag:
-                            console.print(f"[bold yellow]FLAG: {flag}[/bold yellow]")
-                        return
-                    # Path was blocked, continue exploring
+            # Try path to goal
+            path = astar(self.maze, (self.x, self.y), GOAL)
+            if path:
+                reached, flag = self.follow(path)
+                if reached:
+                    print(f"\n\nGoal reached in {self.steps} steps!")
+                    if flag:
+                        print(f"FLAG: {flag}")
+                    print(f"\nDiscovered maze:\n{self.maze.render(self.path)}")
+                    return
+            else:
+                # Explore
+                exp = find_unexplored(self.maze, (self.x, self.y))
+                if exp:
+                    self.follow(exp)
                 else:
-                    # No known path to goal, explore more
-                    explore_path = self.find_nearest_unexplored()
-                    if explore_path:
-                        self.follow_path(explore_path, live)
+                    # Try any open direction
+                    walls = self.api_walls()
+                    for rel in ["forward", "left", "right", "back"]:
+                        if not walls[rel]:
+                            self.move(rel)
+                            break
                     else:
-                        # Try moving to an adjacent unexplored cell
-                        walls = self.get_walls()
-                        moved = False
-                        for rel_dir in ["forward", "left", "right", "back"]:
-                            if not walls[rel_dir]:
-                                self.move_direction(rel_dir)
-                                self.update_display(live)
-                                moved = True
-                                break
-                        if not moved:
-                            live.stop()
-                            console.print("[bold red]Stuck! No moves available.[/bold red]")
-                            return
-
-
-def main():
-    solver = AStarSolver()
-    solver.solve()
+                        print("\n\nStuck!")
+                        print(f"\nDiscovered maze:\n{self.maze.render(self.path)}")
+                        return
 
 
 if __name__ == "__main__":
-    main()
+    Solver().solve()
