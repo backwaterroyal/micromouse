@@ -10,6 +10,7 @@ START_POSITION = (0, 0)
 # Global state
 _maze: Maze | None = None
 _mice: dict[str, tuple[int, int]] = {}
+_ctf_flag: str | None = None
 
 
 def init_maze(size: int = MAZE_SIZE) -> Maze:
@@ -47,3 +48,14 @@ def reset_mouse(name: str):
 def get_all_mice() -> dict[str, tuple[int, int]]:
     """Get all mice and their positions."""
     return _mice.copy()
+
+
+def set_ctf_flag(flag: str):
+    """Set the CTF flag."""
+    global _ctf_flag
+    _ctf_flag = flag
+
+
+def get_ctf_flag() -> str | None:
+    """Get the CTF flag if set."""
+    return _ctf_flag
