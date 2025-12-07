@@ -12,10 +12,10 @@ _maze: Maze | None = None
 _mice: dict[str, tuple[int, int]] = {}
 
 
-def init_maze() -> Maze:
+def init_maze(size: int = MAZE_SIZE) -> Maze:
     """Initialize the global maze."""
     global _maze
-    _maze = Maze(size=MAZE_SIZE)
+    _maze = Maze(size=size)
     return _maze
 
 

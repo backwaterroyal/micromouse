@@ -24,10 +24,11 @@ def server():
 @server.command()
 @click.option("--host", default="127.0.0.1", help="Host to bind to")
 @click.option("--port", default=8000, type=int, help="Port to bind to")
-def start(host: str, port: int):
+@click.option("--size", default=32, type=int, help="Size of the maze (NxN)")
+def start(host: str, port: int, size: int):
     """Start the micromouse server."""
     # Initialize maze before starting
-    maze = state.init_maze()
+    maze = state.init_maze(size=size)
 
     console.print(f"[bold green]Micromouse Server[/bold green]")
     console.print(f"  Maze size: {maze.size}x{maze.size}")
