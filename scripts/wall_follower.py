@@ -51,6 +51,8 @@ def solve():
                     if result["goal_reached"]:
                         live.stop()
                         console.print(f"[bold green]Goal reached in {steps} steps![/bold green]")
+                        if result.get("flag"):
+                            console.print(f"[bold yellow]FLAG: {result['flag']}[/bold yellow]")
                         return
                     break
 

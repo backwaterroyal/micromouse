@@ -25,10 +25,14 @@ def server():
 @click.option("--host", default="127.0.0.1", help="Host to bind to")
 @click.option("--port", default=8000, type=int, help="Port to bind to")
 @click.option("--size", default=32, type=int, help="Size of the maze (NxN)")
-def start(host: str, port: int, size: int):
+@click.option("--ctf", default=None, help="CTF flag to reveal when maze is solved")
+def start(host: str, port: int, size: int, ctf: str | None):
     """Start the micromouse server."""
     # Initialize maze before starting
     maze = state.init_maze(size=size)
+
+    if ctf:
+        state.set_ctf_flag(ctf)
 
     console.print(f"[bold green]Micromouse Server[/bold green]")
     console.print(f"  Maze size: {maze.size}x{maze.size}")

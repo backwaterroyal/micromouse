@@ -37,6 +37,7 @@ class MoveResponse(BaseModel):
     success: bool
     position: Position
     goal_reached: bool
+    flag: str | None = None
 
 
 class ResetResponse(BaseModel):
@@ -83,10 +84,14 @@ def move_mouse(name: str, request: MoveRequest) -> MoveResponse:
     new_x, new_y = x + dx, y + dy
     state.set_mouse_position(name, new_x, new_y)
 
+    goal_reached = maze.is_goal(new_x, new_y)
+    flag = state.get_ctf_flag() if goal_reached else None
+
     return MoveResponse(
         success=True,
         position=Position(x=new_x, y=new_y),
-        goal_reached=maze.is_goal(new_x, new_y),
+        goal_reached=goal_reached,
+        flag=flag,
     )
 
 
