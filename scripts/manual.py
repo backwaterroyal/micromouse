@@ -6,18 +6,19 @@ import requests
 
 BASE = "http://127.0.0.1:8000"
 MOUSE = "manual"
+session = requests.Session()
 
 
 def get_walls():
-    return requests.get(f"{BASE}/mouse/{MOUSE}/surroundings").json()
+    return session.get(f"{BASE}/mouse/{MOUSE}/surroundings").json()
 
 
 def move(direction):
-    return requests.post(f"{BASE}/mouse/{MOUSE}/move", json={"direction": direction}).json()
+    return session.post(f"{BASE}/mouse/{MOUSE}/move", json={"direction": direction}).json()
 
 
 def reset():
-    return requests.post(f"{BASE}/mouse/{MOUSE}/reset").json()
+    return session.post(f"{BASE}/mouse/{MOUSE}/reset").json()
 
 
 def main():

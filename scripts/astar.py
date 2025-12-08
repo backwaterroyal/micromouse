@@ -19,6 +19,8 @@ TURN = {
     "right": lambda f: DIRS[(DIRS.index(f) + 1) % 4],
 }
 
+session = requests.Session()
+
 
 class MazeMap:
     """Discovered maze walls. Decoupled from navigation."""
@@ -163,13 +165,13 @@ class Solver:
         self.path = [(0, 0)]
 
     def api_walls(self):
-        return requests.get(f"{BASE}/mouse/{MOUSE}/surroundings").json()
+        return session.get(f"{BASE}/mouse/{MOUSE}/surroundings").json()
 
     def api_move(self, direction):
-        return requests.post(f"{BASE}/mouse/{MOUSE}/move", json={"direction": direction}).json()
+        return session.post(f"{BASE}/mouse/{MOUSE}/move", json={"direction": direction}).json()
 
     def api_reset(self):
-        requests.post(f"{BASE}/mouse/{MOUSE}/reset")
+        session.post(f"{BASE}/mouse/{MOUSE}/reset")
 
     def sense(self):
         """Read walls and update map."""
