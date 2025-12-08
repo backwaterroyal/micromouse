@@ -23,7 +23,7 @@ def server():
 
 @server.command()
 @click.option("--host", default="127.0.0.1", help="Host to bind to")
-@click.option("--port", default=8000, type=int, help="Port to bind to")
+@click.option("--port", default=80, type=int, help="Port to bind to")
 @click.option("--size", default=32, type=int, help="Size of the maze (NxN)")
 @click.option("--ctf", default=None, help="CTF flag to reveal when maze is solved")
 def start(host: str, port: int, size: int, ctf: str | None):

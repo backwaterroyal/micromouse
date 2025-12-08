@@ -3,6 +3,7 @@
 from enum import Enum
 
 from fastapi import FastAPI
+from fastapi.responses import PlainTextResponse
 from pydantic import BaseModel
 
 from micromouse import state
@@ -92,6 +93,9 @@ def relative_to_cardinal(
         return TURN_RIGHT[facing]
     raise ValueError(f"Unknown direction: {relative}")
 
+@app.get("/", response_class=PlainTextResponse, include_in_schema=False)
+def root():
+    return """Welcome to Micromouse!\n\nYou are a robotic mouse at the start of a maze. You have no map. You only know the walls immediately around you. Move forward, backward, left, or right, and you'll see your new position and whatever walls surround you there.\n\nPlay this game by using the API. Read the docs in a browser at /docs\n\nFind the center.\n"""
 
 @app.get("/mouse/{name}/surroundings", response_model=SurroundingsResponse)
 def get_surroundings(name: str) -> SurroundingsResponse:
@@ -109,6 +113,9 @@ def get_surroundings(name: str) -> SurroundingsResponse:
         right=walls[TURN_RIGHT[facing].value],
     )
 
+@app.get("/hint", response_class=PlainTextResponse, include_in_schema=False)
+def get_hint():
+    return """It is said that any maze can be solved by keeping a hand on the right wall...\n"""
 
 @app.post("/mouse/{name}/move", response_model=MoveResponse)
 def move_mouse(name: str, request: MoveRequest) -> MoveResponse:
@@ -135,7 +142,8 @@ def move_mouse(name: str, request: MoveRequest) -> MoveResponse:
     state.set_mouse_state(name, new_x, new_y, cardinal_direction)
 
     goal_reached = maze.is_goal(new_x, new_y)
-    flag = state.get_ctf_flag() if goal_reached else None
+    ctf_flag = state.get_ctf_flag()
+    flag = f"flag{{{ctf_flag}}}" if goal_reached and ctf_flag else None
 
     return MoveResponse(
         success=True,

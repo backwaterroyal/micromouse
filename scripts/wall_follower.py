@@ -7,7 +7,7 @@ from rich.console import Console
 from rich.live import Live
 from rich.text import Text
 
-BASE = "http://127.0.0.1:8000"
+BASE = "http://127.0.0.1:80"
 MOUSE = "jerry"
 console = Console()
 session = requests.Session()
