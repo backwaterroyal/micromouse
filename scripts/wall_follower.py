@@ -10,18 +10,19 @@ from rich.text import Text
 BASE = "http://127.0.0.1:8000"
 MOUSE = "jerry"
 console = Console()
+session = requests.Session()
 
 
 def get_walls():
-    return requests.get(f"{BASE}/mouse/{MOUSE}/surroundings").json()
+    return session.get(f"{BASE}/mouse/{MOUSE}/surroundings").json()
 
 
 def move(direction):
-    return requests.post(f"{BASE}/mouse/{MOUSE}/move", json={"direction": direction}).json()
+    return session.post(f"{BASE}/mouse/{MOUSE}/move", json={"direction": direction}).json()
 
 
 def solve():
-    requests.post(f"{BASE}/mouse/{MOUSE}/reset")
+    session.post(f"{BASE}/mouse/{MOUSE}/reset")
     steps = 0
 
     with Live(console=console, refresh_per_second=10) as live:
