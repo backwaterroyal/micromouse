@@ -48,6 +48,35 @@ class ResetResponse(BaseModel):
     message: str = "Mouse reset to starting position facing north"
 
 
+class MazeMetadataResponse(BaseModel):
+    """Metadata about the current maze."""
+
+    size: int
+    total_cells: int
+    start_position: tuple[int, int]
+    start_direction: str
+    goal_cells: list[tuple[int, int]]
+
+
+class CellWalls(BaseModel):
+    """Walls for a single cell."""
+
+    north: bool
+    south: bool
+    east: bool
+    west: bool
+
+
+class FullMazeResponse(BaseModel):
+    """Complete maze data including all walls."""
+
+    size: int
+    start_position: tuple[int, int]
+    start_direction: str
+    goal_cells: list[tuple[int, int]]
+    cells: dict[str, CellWalls]  # Key is "x,y" string for JSON compatibility
+
+
 # Rotation tables for converting relative to cardinal directions
 TURN_LEFT = {
     CardinalDirection.north: CardinalDirection.west,
@@ -96,6 +125,44 @@ def relative_to_cardinal(
 @app.get("/", response_class=PlainTextResponse, include_in_schema=False)
 def root():
     return """Welcome to Micromouse!\n\nYou are a robotic mouse at the start of a maze. You have no map. You only know the walls immediately around you. Move forward, backward, left, or right, and you'll see your new position and whatever walls surround you there.\n\nPlay this game by using the API. Read the docs in a browser at /docs\n\nFind the center.\n"""
+
+
+@app.get("/maze/metadata", response_model=MazeMetadataResponse)
+def get_maze_metadata() -> MazeMetadataResponse:
+    """Get metadata about the current maze."""
+    maze = state.get_maze()
+    return MazeMetadataResponse(
+        size=maze.size,
+        total_cells=maze.size * maze.size,
+        start_position=state.START_POSITION,
+        start_direction=state.START_FACING.value,
+        goal_cells=sorted(maze.goal_cells),
+    )
+
+
+@app.get("/maze/full", response_model=FullMazeResponse)
+def get_full_maze() -> FullMazeResponse:
+    """Get complete maze data including all walls (cheating endpoint)."""
+    maze = state.get_maze()
+
+    # Convert cells to JSON-compatible format
+    cells = {}
+    for (x, y), cell in maze.cells.items():
+        cells[f"{x},{y}"] = CellWalls(
+            north=cell.north,
+            south=cell.south,
+            east=cell.east,
+            west=cell.west,
+        )
+
+    return FullMazeResponse(
+        size=maze.size,
+        start_position=state.START_POSITION,
+        start_direction=state.START_FACING.value,
+        goal_cells=sorted(maze.goal_cells),
+        cells=cells,
+    )
+
 
 @app.get("/mouse/{name}/surroundings", response_model=SurroundingsResponse)
 def get_surroundings(name: str) -> SurroundingsResponse:
